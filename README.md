@@ -1,2 +1,1 @@
 Informasjon om linjefølgeren
-fihdaoihfp
