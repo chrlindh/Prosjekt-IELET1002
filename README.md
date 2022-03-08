@@ -1,1 +1,1 @@
-# Velkommen-til-prosjekt
+Informasjon om linjefølgeren
