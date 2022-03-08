@@ -1,1 +1,0 @@
-Informasjon om linjefølgeren
