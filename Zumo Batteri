@@ -1,0 +1,63 @@
+#include <Wire.h>
+#include <Zumo32U4.h>
+#include <Zumo32U4Encoders.h>
+
+Zumo32U4Motors motors;
+Zumo32U4ButtonA buttonA;
+Zumo32U4Encoders encoders;
+Zumo32U4LCD display;
+
+// Teller counts, altså avstand
+int countsLeft;
+int countsRight;
+int counts;
+int distanceTraveled;
+
+// Teller tiden per meter
+float preTimeTraveled = 0;
+float postTimeTraveled = 0;
+float timeTraveled = 0;
+
+// Antall meter
+float meterCount = 0;
+
+// Batteriprosent(Finne en måte å beholde forrige verdi)
+float batteriProsent = 100;
+
+void setup()
+{
+  // Starte programmet
+  buttonA.waitForButton();
+  delay(1000);
+}
+
+void loop()
+{
+  // Teller antall counts
+  countsLeft = encoders.getCountsAndResetLeft();
+  countsRight = encoders.getCountsAndResetRight();
+
+  // Hastighet på Zumo
+  motors.setSpeeds(200,200);
+
+  // Begynner telleren
+  preTimeTraveled = millis();
+
+  // Printer ut batteriprosent
+  display.clear();
+  display.print(batteriProsent);
+
+  // Skalert til cm for mer presisjon i telling 
+  
+  // Når Zumo begynner å kjøre, teller den
+  do {
+    countsLeft = encoders.getCountsLeft();
+    countsRight = encoders.getCountsRight();
+    counts = ((countsLeft + countsRight)/2);
+    distanceTraveled = (counts/8000);
+  }  while(counts < 80); 
+  postTimeTraveled = millis();
+  timeTraveled = (postTimeTraveled - preTimeTraveled)/10;
+  meterCount++;
+  batteriProsent = map(meterCount, 0, 2000, 100, 0);
+}  
