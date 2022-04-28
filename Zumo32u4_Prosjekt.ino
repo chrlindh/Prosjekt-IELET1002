@@ -235,7 +235,6 @@ void loop()
     batteryRecharge = received;
     if(batteryRecharge == "p") {
       meterCount = 0;
-      Serial.print("Command Received");
     } 
   }
 

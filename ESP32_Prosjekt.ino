@@ -2,7 +2,7 @@
 #include <PubSubClient.h>
 #include <Wire.h>
 
-// SSID & Password - telefon
+// SSID & Password - Ruter
 const char* ssid = "Altibox257862";  // Enter your SSID here
 const char* password = "6h5yV6TU";  //Enter your Password here
 
@@ -10,6 +10,7 @@ const char* mqttServer = "192.168.10.160";
 const int mqttPort = 1883;
 const char* mqttUser = "mqtt_user";
 const char* mqttPassword = "#mqtt1213";
+
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -45,13 +46,15 @@ void setup() {
 
 void loop() {
   client.loop();
-float batteriProsent;
+  float batteriProsent;
   while(Serial.available()) {
     delay(1);
     float received = (float)Serial.read();
     batteriProsent = received;
     Serial.print("ESP32: ");
     Serial.println(batteriProsent);
+    //Må fikse fra float til const char
+    //client.publish("homeassistant/esp/battery", batteriProsent2);
   }
   
   if (batteriProsent == 90){
