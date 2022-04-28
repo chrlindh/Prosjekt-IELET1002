@@ -54,6 +54,15 @@ float meterCount = 0;
 // Batteriprosent(Finne en måte å beholde forrige verdi)
 int batteriProsent = 100;
 
+unsigned long previousMillis = 0;
+unsigned long previousMillis2 = 0;
+
+
+char str[] = "";
+int i = 0;
+
+
+
 
 // Kalibrer sensoren 
 void calibrateSensors() 
@@ -86,8 +95,11 @@ void setup()
 
 void linjefolger() 
 { 
-
-  Serial1.write(batteriProsent);
+  unsigned long currentMillis2 = millis();
+  if(currentMillis2 - previousMillis2 >= 100) {
+    previousMillis2 = currentMillis2;
+    Serial1.write(batteriProsent);
+  }
   #define NUM_SENSORS 5 
   unsigned int lineSensorValues[NUM_SENSORS]; 
   
@@ -190,7 +202,11 @@ void loop()
       break;
     case 2:
       border();
-      Serial1.write(batteriProsent);
+      unsigned long currentMillis = millis();
+      if(currentMillis - previousMillis >= 100) {
+        previousMillis = currentMillis;
+        Serial1.write(batteriProsent);
+      }
       break;
     case 3:
       calibrateSensors();
@@ -212,7 +228,23 @@ void loop()
   }  while(counts < 80); 
   postTimeTraveled = millis();
   timeTraveled = (postTimeTraveled - preTimeTraveled)/10;
+
+  String batteryRecharge; 
+  while (Serial1.available()){
+    char received = (char)Serial1.read();
+    batteryRecharge = received;
+    if(batteryRecharge == "p") {
+      meterCount = 0;
+      Serial.print("Command Received");
+    } 
+  }
+
+
+
+  
   meterCount++;
   batteriProsent = map(meterCount, 0, 2000, 100, 0); 
+
+//Ladefunksjon 
 
 }

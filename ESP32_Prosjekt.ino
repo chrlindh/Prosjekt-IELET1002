@@ -7,24 +7,17 @@ void setup()
 
 void loop()
 {
-  String batteriProsent;
+  float batteriProsent;
   while(Serial.available()) {
-    delay(5);
+    delay(1);
     float received = (float)Serial.read();
     batteriProsent = received;
+    Serial.print("ESP32: ");
     Serial.println(batteriProsent);
   }
-  //Serial.println(batteriProsent);
-  delay(1000);
-
-
   
-//  do {
-//    distanceTraveled = (counts/8000);
-//    
-//  } while(counts < 80); 
-//  postTimeTraveled = millis();
-//  timeTraveled = (postTimeTraveled - preTimeTraveled)/10;
-//  centimeterCount++;
-//  batteriProsent = map(centimeterCount, 0, 2000, 100, 0); 
+  if (batteriProsent == 90){
+    Serial.write("p");
+  }
+  
 }
