@@ -90,7 +90,7 @@ void setup()
 {
   calibrateSensors(); 
   delay(2000); 
-  Serial1.begin(9600);
+  Serial1.begin(115200);
 } 
 
 void linjefolger() 
