@@ -1,0 +1,88 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <Wire.h>
+
+// SSID & Password - Ruter
+const char* ssid = "Altibox257862";  // Enter your SSID here
+const char* password = "6h5yV6TU";  //Enter your Password here
+
+const char* mqttServer = "192.168.10.160";
+const int mqttPort = 1883;
+const char* mqttUser = "mqtt_user";
+const char* mqttPassword = "#mqtt1213";
+
+
+WiFiClient esp2Client;
+PubSubClient client(esp2Client);
+
+
+void setup() {
+  WiFi.mode(WIFI_STA);
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  
+  while(WiFi.status() != WL_CONNECTED)  {
+   delay(500);
+   Serial.println("Connecting to WiFi..."); 
+  }
+  Serial.println("WiFi connected.");
+
+  client.setServer(mqttServer, mqttPort);
+
+  while(!client.connected())  {
+    Serial.println("Connecting to MQTT...");
+
+    if(client.connect("ESP32Client_Zumo", mqttUser, mqttPassword)) {
+      Serial.println("Connected");   
+    }
+
+    else  {
+      Serial.print("Failed with state ");
+      Serial.print(client.state());
+      delay(2000);
+    }
+  }
+}
+
+void loop() {
+  int batteriProsent;
+  int chargingStation;
+  int received;
+  while(Serial.available()) {
+    delay(1);
+    received = (int)Serial.read();
+    if ((received <= 100) && (received > 0)) {
+      batteriProsent = received;
+      Serial.print("ESP32: ");
+      Serial.println(batteriProsent);
+      char buffer1[64];
+      int batteryReturn = snprintf(buffer1, sizeof buffer1, "%d", batteriProsent);
+      client.publish("homeassistant/esp/battery", buffer1);
+    }
+    else if (received == 101) {
+      chargingStation = received;
+      char buffer2[64];
+      int requestReturn = snprintf(buffer2, sizeof buffer2, "%d", chargingStation);
+      client.publish("homeassistant/esp/chargerequest", buffer2);
+    }
+  }
+  if (received == 101){
+    client.publish("homeassistant/esp/chargerequest", "Dog at charging station, please charge him");
+  }
+    
+//  if (batteriProsent == 90){
+//    Serial.write("p");
+//    client.publish("homeassistant/esp/Zumo", "Low Battery, Request Charging. Cost: 200NOK");
+//  }
+//  else if (batteriProsent <= 5 && batteriProsent >=0) {
+//    Serial.write("q");
+//    client.publish("homeassistant/esp/Zumo", "Critical Low Battery! Request Charging. Cost: 200NOK");
+//  }
+
+
+  
+//    char buffer1[64];
+//    int ret = snprintf(buffer1, sizeof buffer1, "%d", 100);
+//    client.publish("homeassistant/esp/battery", buffer1);
+  
+}
