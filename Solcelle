@@ -36,8 +36,14 @@ const char* mqttPassword = "#mqtt1213";
 WiFiClient esp3Client;
 PubSubClient client(esp3Client);
 
-// Definerer Bank balance
+// Definerer bankBalance
 int bankBalance = 0;
+
+// Definerer batteryBank
+int batteryBank = 0;
+
+// Definerer watt per sekund 
+int watt = 0;
 
 //Button terminal
 const int buttonPin = 35;
@@ -49,6 +55,7 @@ int var = 1;
 int period = 2000;
 unsigned long previousMillis1 = 0;
 unsigned long previousMillis2 = 0;
+unsigned long previousMillis3 = 0;
 
 //Klokke - variabler
 int hoursOffset = 1; //One hour for Norway
@@ -59,6 +66,7 @@ int daylightOffset = 3600;  //Replace with your daylight savings offset in secon
 
 //Setup og konfigurering
 void setup() {
+  // Starter seriekommunikasjon
   Serial.begin(115200);
   Serial.println("Try Connecting to ");
   Serial.println(ssid);
@@ -106,39 +114,77 @@ void setup() {
   }
 }
 
-void bank()
+// Funksjonen for å trekke watt fra solcella og tjene penger fra overskudd
+void battery()
 {
   // Leser inngangen på analog pinne (verdi mellom 0 og 4095)
   brightness = analogRead(solarCell);
-  // Definer hvor mye penger vi tjener, avhengig av lysstyrken
+  // Definer hvor mye watt vi får, avhengig av lysstyrken
   if (brightness < 40) {
-    bankBalance += 1;
+    watt += 0.005;
+ 
+  } else if (brightness < 80) {
+    watt += 0.05;    
     
-  } else if (brightness < 800) {
-    bankBalance += 5;    
+  } else if (brightness < 100) {
+    watt += 0.5;
     
-  } else if (brightness < 2000) {
-    bankBalance += 10;
-    
-  } else if (brightness < 3200) {
-    bankBalance += 15;
+  } else if (brightness < 200) {
+    watt += 1;
     
   } else {
-    bankBalance += 20;
+    watt += 1.5;
   }
-  unsigned long currentMillis1 = millis();
-  if (currentMillis1 - previousMillis1 >= 3000) {
-    previousMillis1 = currentMillis1;
-    char buffer1[64];
-    int ret = snprintf(buffer1, sizeof buffer1, "%d", bankBalance);
-    client.publish("homeassistant/esp/bankBalance", buffer1);
+  // Sender watt til batterybanken,
+  // helt til den har nok til å lade zumoen
+  if (batteryBank <= 1000)
+  {
+    batteryBank = watt;
+    // Får den til å sende informasjonen til serveren hvert 3 sekund,
+    // for å ikke "spamme" serveren
+    unsigned long currentMillis1 = millis();
+    if (currentMillis1 - previousMillis1 >= 3000) {
+      previousMillis1 = currentMillis1;
+      char buffer1[64];
+      int ret = snprintf(buffer1, sizeof buffer1, "%d", batteryBank);
+      client.publish("homeassistant/esp/batteryBank", buffer1);
+    }
+  }
+  else {
+    bankBalance = watt;
+    // Får den til å sende informasjonen til serveren hvert 3 sekund,
+    // for å ikke "spamme" serveren
+    unsigned long currentMillis3 = millis();
+    if (currentMillis3 - previousMillis3 >= 3000) {
+        previousMillis3 = currentMillis3;
+        char buffer3[64];
+        int ret = snprintf(buffer3, sizeof buffer3, "%d", bankBalance);
+        client.publish("homeassistant/esp/batteryBank", buffer3);
+    }
   }
 }
 
-//Lokalt display for bank
+//Lokalt display for battery
+void displayBattery() 
+{  
+  battery();
+  // Klargør display
+  display.clearDisplay();
+  //Setter farge
+  display.setTextColor(WHITE);
+  //Setter skriftstørelsen
+  display.setTextSize(1);
+  //Setter pekerkoordinater
+  display.setCursor(0,0);
+  display.print("Total Power: ");
+  display.print(batteryBank);
+  display.print(" W");
+}
+
+//Lokalt display for bnk
 void displayBank() 
 {  
-  bank();
+  battery();
   // Klargør display
   display.clearDisplay();
   //Setter farge
@@ -149,9 +195,10 @@ void displayBank()
   display.setCursor(0,0);
   display.print("Bank: ");
   display.print(bankBalance);
-  display.print(" Kr");
+  display.print(" kr");
 }
 
+// Sender lysstyrke informasjonen til serveren
 void Brightness()
 {
   brightness = analogRead(solarCell);
@@ -204,8 +251,10 @@ void loop()
 {
   //Raspberry PI server
   client.loop();
+
+  // Henter informasjon
   Brightness();
-  bank();  
+  battery();  
   
   //Kaller på display-funksjon
   switch(var) {
@@ -214,10 +263,14 @@ void loop()
       display.display();
       break;
     case 2:
-      displayBank();
+      displayBattery();
       display.display();
       break;
     case 3:
+      displayBank();
+      display.display();
+      break;
+    case 4:
       displayClock();
       display.display();
   }
@@ -230,6 +283,9 @@ void loop()
       var = 3;
     }
     else if (var == 3) {
+      var = 4;
+    }
+    else if (var == 4) {
       var = 1;
     }
   }
