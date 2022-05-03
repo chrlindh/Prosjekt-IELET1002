@@ -1,0 +1,120 @@
+#include <WiFi.h>
+#include <PubSubClient.h>
+#include <Wire.h>
+
+// SSID & Password - Ruter
+const char* ssid = "Altibox257862";  // Enter your SSID here
+const char* password = "6h5yV6TU";  //Enter your Password here
+
+const char* mqttServer = "192.168.10.160";
+const int mqttPort = 1883;
+const char* mqttUser = "mqtt_user";
+const char* mqttPassword = "#mqtt1213";
+
+
+WiFiClient esp2Client;
+PubSubClient client(esp2Client);
+
+
+void setup() {
+  WiFi.mode(WIFI_STA);
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  
+  while(WiFi.status() != WL_CONNECTED)  {
+   delay(500);
+   Serial.println("Connecting to WiFi..."); 
+  }
+  Serial.println("WiFi connected.");
+
+  client.setServer(mqttServer, mqttPort);
+
+
+  client.setCallback(callback); //Denne er ny!
+  while(!client.connected())  {
+    Serial.println("Connecting to MQTT...");
+
+    if(client.connect("ESP32Client_Zumo", mqttUser, mqttPassword)) {
+      Serial.println("Connected");   
+    }
+
+    else  {
+      Serial.print("Failed with state ");
+      Serial.print(client.state());
+      delay(2000);
+    }
+  }
+  client.subscribe("homeassistant/Pie/Alarm"); //Denne må du endre!!
+  
+}
+
+
+
+//Funkjson som reagerer på beskjeder fra Raspberry Pi
+void callback(char* topic, byte* payload, unsigned int length) {
+ 
+  Serial.print("Topic: ");
+  Serial.println(topic);
+  Serial.print("Payload: ");
+  Serial.print((int)payload[0]);
+
+
+  //Skrur av eller på alarm ved beskjed fra Raspberry Pi
+  if ((int)payload[0] == 49) {
+    alarmState = (alarmState + 1) % 2;
+  //Koverterings kode
+    char buffer2[64];
+    int stusReturn = snprintf(buffer2, sizeof buffer2, "%d", alarmState);
+    //Publiser til server
+    client.publish("homeassistant/esp/alarmstatus", buffer2);
+  }
+
+  
+  //Skrur på alarm ved signal fra beerSensor og hvis alarm er aktivert fra Pi'en
+  if (alarmState == 0) {
+    if ((int)payload[0] == 70) {
+      beerAlarm();
+      ledcWrite(channelRedLED, 255);
+      ledcWrite(channelGreenLED, 0);
+      ledcWrite(channelBlueLED, 0);
+      delay(2000);
+    }  
+  }
+ 
+  Serial.println();
+  Serial.println("-----------------------");
+
+}
+
+
+
+
+
+
+
+
+void loop() {
+  int batteriProsent;
+  while(Serial.available()) {
+    delay(1);
+    int received = (int)Serial.read();
+    batteriProsent = received;
+    Serial.print("ESP32: ");
+    Serial.println(batteriProsent);
+    char buffer[64];
+    int ret = snprintf(buffer, sizeof buffer, "%d", batteriProsent);
+    client.publish("homeassistant/esp/battery", buffer);
+  }
+  
+  if (batteriProsent == 98){
+    Serial.write("p");
+    client.publish("homeassistant/esp/Zumo", "Low Battery, Request Charging. Cost: 100NOK");
+  }
+  else if (batteriProsent <= 5 && batteriProsent >=0) {
+    Serial.write("q");
+    client.publish("homeassistant/esp/Zumo", "Critical Low Battery! Request Charging. Cost: 100NOK");
+  }
+//    char buffer1[64];
+//    int ret = snprintf(buffer1, sizeof buffer1, "%d", 100);
+//    client.publish("homeassistant/esp/battery", buffer1);
+  
