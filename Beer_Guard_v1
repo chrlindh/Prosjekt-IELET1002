@@ -1,0 +1,388 @@
+//#include <itoa.h>
+//#include <stdlib.h>
+#include "stdlib_noniso.h"
+
+//Bibliotek for WiFi
+#include <WiFi.h>
+#include <WebServer.h>
+
+//Bibliotek for klokke
+#include <time.h>
+
+
+//Bibliotek for display:
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+//Bibliotek for OLED display
+#define OLED_RESET 4 
+Adafruit_SSD1306 display(OLED_RESET);
+
+//Biblotek for server
+#include <PubSubClient.h>
+
+
+
+
+// SSID & Password - hjemme
+//const char* ssid = "Get-2G-DCD1C1";  // Enter your SSID here
+//const char* password = "3888R3CDX8";  //Enter your Password here
+
+// SSID & Password - telefon
+//const char* ssid = "Anders iPhone";  // Enter your SSID here
+//const char* password = "yoyoyoyo";  //Enter your Password here
+
+// SSID & Password - Christian(server)
+const char* ssid = "Altibox257862";  // Enter your SSID here
+const char* password = "6h5yV6TU";  //Enter your Password here
+
+
+//Server login
+//bytt ut alle brukernavn og passord med deres egne.
+const char* mqttServer = "192.168.10.160";
+const int mqttPort = 1883;
+const char* mqttUser = "mqtt_user";
+const char* mqttPassword = "#mqtt1213";
+
+WiFiClient esp4Client;
+PubSubClient client(esp4Client);
+
+
+
+
+
+//LED Terminals
+const int redLED = 26;
+const int greenLED = 25;
+const int blueLED = 33;
+
+//Button terminal
+const int buttonPin = 35;
+
+//Switch-case default
+int var = 1;
+
+//Channels
+const int channelRedLED = 0;
+const int channelGreenLED = 1;
+const int channelBlueLED = 2;
+const int channelBuzzer = 5;
+
+//Tid-takings variabler
+int period = 2000;
+unsigned long time_now = 0;
+unsigned long wait = 0;
+unsigned long previousMillis = 0;
+unsigned long previousMillis2 = 0;
+
+
+//Klokke - variabler
+int hoursOffset = 1; //One hour for Norway
+int GMTOffset = (hoursOffset*60*60);  //Replace with your GMT Offset in seconds
+int daylightOffset = 3600;  //Replace with your daylight savings offset in seconds
+//3600 or 0
+
+
+//Buzzer variabel
+const int buzzerPin = 12;
+
+
+//Ultrasonic sensor pins and variables
+const int trigPin = 14;
+const int echoPin = 27;
+long duration;
+int distance;
+
+
+//Alarm status
+int alarmState;
+int prevousAlarmMessage;
+
+
+//Setup og konfigurering
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Try Connecting to ");
+  Serial.println(ssid);
+
+  // Connect to your wi-fi modem
+  WiFi.begin(ssid, password);
+
+  // Check wi-fi is connected to wi-fi network
+  while (WiFi.status() != WL_CONNECTED) {
+  delay(1000);
+  Serial.print(".");
+  }
+  Serial.println("");
+  Serial.println("WiFi connected successfully");
+  Serial.print("Got IP: ");
+  Serial.println(WiFi.localIP());  //Show ESP32 IP on serial
+  delay(3000); //Delay som gir oss tid til å kopiere IP - kan slettes
+//  server.on("/", handle_root);
+
+
+
+  //Setter opp LED lys OUTPUTS og kanaler
+  pinMode(redLED, OUTPUT);
+  pinMode(greenLED, OUTPUT);
+  pinMode(blueLED,  OUTPUT);
+
+
+  //Setter opp button
+  pinMode(buttonPin,  INPUT);
+
+//Setter opp RedLED
+  ledcSetup(channelRedLED, 2000, 8);
+  ledcAttachPin(redLED, channelRedLED);
+  ledcWrite(channelRedLED, 0);
+  
+  ledcSetup(channelGreenLED, 2000, 8);
+  ledcAttachPin(greenLED, channelGreenLED);
+  ledcWrite(channelGreenLED, 0);
+ 
+  ledcSetup(channelBlueLED, 2000, 8);
+  ledcAttachPin(blueLED, channelBlueLED);
+  ledcWrite(channelBlueLED, 0);
+
+  //Skru på OLED skjerm
+  Wire.begin();
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+
+  //Konfigurer klokke
+  configTime(GMTOffset, daylightOffset, "pool.ntp.org","time.nist.gov");
+
+  //Setter opp buzzer med PWM
+  pinMode(buzzerPin, OUTPUT);
+  ledcSetup(channelBuzzer, 2000, 8);
+  ledcAttachPin(buzzerPin, channelBuzzer);
+  ledcWrite(channelBuzzer, 0);
+
+  //Setter opp ultrasonic sensor
+  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
+
+
+  //Server tilkobling
+  client.setCallback(callback);
+  if (ssid == "Altibox257862") {
+    WiFi.mode(WIFI_STA);
+    client.setServer(mqttServer, mqttPort);
+  
+    while(!client.connected())  {
+      Serial.println("Connecting to MQTT...");
+  
+      if(client.connect("ESP32Client_beer", mqttUser, mqttPassword)) {
+        Serial.println("Connected");   
+      }
+  
+      else  {
+        Serial.print("Failed with state ");
+        Serial.print(client.state());
+        delay(2000);
+      }
+    }
+  }
+  client.subscribe("homeassistant/Pie/Alarm2");
+}
+
+
+
+
+//Lokalt display klokke
+void displayTime() {
+  time_t rawtime = time(nullptr);
+  struct tm* timeinfo = localtime(&rawtime);
+  
+  display.clearDisplay();
+  
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0,0);
+  display.print("The time is:");
+  
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(35,10);
+  display.print(timeinfo->tm_hour);
+  display.print(":");
+  if( timeinfo->tm_min <10)
+  display.print("0");
+  display.print(timeinfo->tm_min);
+}
+
+//Beer is missing
+void displayNoBeer() {
+  
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(20,10);
+  Serial.println("BASTARD TOOK OUR BEER!!!!!");
+  display.print("NO BEER!");
+    
+  //Koverterings kode
+  char mybuffer[64];
+  int ret = snprintf(mybuffer, sizeof mybuffer, "%f", 2);
+  //Publiser til server
+  client.publish("homeassistant/esp/beeralarm", mybuffer);
+  
+  //client.publish("homeassistant/esp/beeralarm", "Fucker took our beer!!!");
+  display.display();
+}
+
+void distanceProcessing() {
+  // Clears the trigPin
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  
+  
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  
+  
+  // Reads the echoPin, returns the sound wave travel time in microseconds
+  duration = pulseIn(echoPin, HIGH);
+  
+  
+  // Calculating the distance
+  distance = duration * 0.034/2;
+  //client.publish("homeassistant/esp/beeralarm", String(distance));
+
+  
+}
+
+void displayDistance() {
+  if (digitalRead(buttonPin) == LOW) {
+    if (var == 1) {
+      var = 2;
+    }
+    else  {
+      var = 1;
+    }
+  }
+  display.clearDisplay();
+  
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0,0);
+  display.print("Distance:");
+  display.setCursor(0,10);
+  display.print(distance);
+  display.print(" cm");
+  if (alarmState == 0) {
+    display.setCursor(0, 20);
+    display.print("Alarm Armed");
+  }
+    else if (alarmState == 1) {
+    display.setCursor(0, 20);
+    display.print("Alarm Disarmed");
+  }
+
+  
+  delay(1000);
+//  byte myString = byte(distance);
+//  client.publish("homeassistant/esp/beeralarm", myString);
+
+  //Koverterings kode
+  //char buffer[64];
+  //int ret = snprintf(buffer, sizeof buffer, "%", distance);
+  //Publiser til server
+  //client.publish("homeassistant/esp/temp", buffer);
+
+}
+
+void beerAlarm() {
+
+
+  if (alarmState == 1) {
+    goto bailout;
+  }
+    //Lokalt LED lys for visuell feedback
+  if(distance >= 6.00)  { //Indicates no beer present
+    ledcWrite(channelRedLED, 255);
+    ledcWrite(channelGreenLED, 0);
+    ledcWrite(channelBlueLED, 0);
+    ledcWriteTone(channelBuzzer, 1000);
+    displayNoBeer();
+    display.display();
+    delay(2000);
+  }
+  if(distance <= 4.00)  {  //Indicates error
+    ledcWrite(channelRedLED, 0);
+    ledcWrite(channelGreenLED, 0);
+    ledcWrite(channelBlueLED, 255);
+    ledcWriteTone(channelBuzzer, 0);
+  }
+    //Indicates beer present
+  if(distance < 6.00 && distance > 4.00)  {
+    bailout:
+    ledcWrite(channelRedLED, 0);
+    ledcWrite(channelGreenLED, 255);
+    ledcWrite(channelBlueLED, 0);
+    ledcWriteTone(channelBuzzer, 0);
+    
+  }
+}
+
+
+
+//Funkjson som reagerer på beskjeder fra Raspberry Pi
+void callback(char* topic, byte* payload, unsigned int length) {
+ 
+  Serial.print("Topic: ");
+  Serial.println(topic);
+  Serial.print("Payload: ");
+  Serial.print((int)payload[0]);
+
+
+
+  //Skrur av eller på alarm ved beskjed fra Raspberry Pi
+  if ((int)payload[0] == 49) {
+    alarmState = (alarmState + 1) % 2;
+  }
+
+}
+
+
+
+
+
+
+
+
+
+//Hovedprogram
+void loop() {
+  //Raspberry PI server
+  client.loop();
+
+  
+
+  beerAlarm();
+  distanceProcessing();
+  
+  //Kaller på display-funksjon
+  switch(var) {
+    case 1:
+      displayDistance();
+      display.display();
+      break;
+    case 2:
+      displayTime();
+      display.display();
+      break;
+  }
+  
+  if (digitalRead(buttonPin) == LOW) {
+    if (var == 1) {
+      var = 2;
+    }
+    else if (var == 2) {
+      var = 1;
+    }
+  }
+}
