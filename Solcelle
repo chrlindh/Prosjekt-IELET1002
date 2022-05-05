@@ -1,33 +1,31 @@
- //Bibliotek for WiFi
+// Bibliotek for WiFi
 #include <WiFi.h>
 #include <WebServer.h>
 
-//Biblotek for server
+// Biblotek for server
 #include <PubSubClient.h>
 
-//Bibliotek for klokke
-#include <time.h>
-
-//Bibliotek for display:
+// Bibliotek for display:
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-//Bibliotek for OLED display
+// Bibliotek for OLED display
 #define OLED_RESET 4 
 Adafruit_SSD1306 display(OLED_RESET);
 
 // Solcelle 
 #define solarCell 36 // ESP32 pin GIOP36 (ADC0)
 int brightness;
+float voltage;
 
 // SSID & Password - telefon
 const char* ssid = "Altibox257862";  // Enter your SSID here
-const char* password = "6h5yV6TU";  //Enter your Password here
+const char* password = "6h5yV6TU";   // Enter your Password here
 
-//Server login
-//bytt ut alle brukernavn og passord med deres egne.
+// Server login
+// bytt ut alle brukernavn og passord med deres egne.
 const char* mqttServer = "192.168.10.160";
 const int mqttPort = 1883;
 const char* mqttUser = "mqtt_user";
@@ -36,257 +34,104 @@ const char* mqttPassword = "#mqtt1213";
 WiFiClient esp3Client;
 PubSubClient client(esp3Client);
 
-// Definerer bankBalance
-int bankBalance = 0;
-
-// Definerer batteryBank
-int batteryBank = 0;
-
-// Definerer watt per sekund 
-int watt = 0;
-
-//Button terminal
-const int buttonPin = 35;
-
-//Switch-case default
-int var = 1;
-
-//Tid-takings variabler
-int period = 2000;
-unsigned long previousMillis1 = 0;
-unsigned long previousMillis2 = 0;
-unsigned long previousMillis3 = 0;
-
-//Klokke - variabler
-int hoursOffset = 1; //One hour for Norway
-int GMTOffset = (hoursOffset*60*60);  //Replace with your GMT Offset in seconds
-int daylightOffset = 3600;  //Replace with your daylight savings offset in seconds
-//3600 or 0
-
-
-//Setup og konfigurering
-void setup() {
-  // Starter seriekommunikasjon
-  Serial.begin(115200);
+// Setup og konfigurering
+void setup() 
+{
+  Serial.begin(115200);                   // Starter seriekommunikasjon
   Serial.println("Try Connecting to ");
-  Serial.println(ssid);
+  Serial.println(ssid);                   //Internettnavn
+  WiFi.begin(ssid, password);             //Kobler til wi-fi modem
 
-  // Connect to your wi-fi modem
-  WiFi.begin(ssid, password);
-
-  // Check wi-fi is connected to wi-fi network
+  // Sjekk wi-fi tilkoblet til wi-fi network
   while (WiFi.status() != WL_CONNECTED) {
-  delay(1000);
-  Serial.print(".");
+    delay(1000);
+    Serial.print(".");
   }
-  Serial.println("");
+  Serial.println("");                     
   Serial.println("WiFi connected successfully");
-  Serial.print("Got IP: ");
-  Serial.println(WiFi.localIP());  //Show ESP32 IP on serial
-  delay(3000); //Delay som gir oss tid til å kopiere IP - kan slettes
+  Serial.print("Got IP: ");               
+  Serial.println(WiFi.localIP());         // Vis ESP32 IP i serial
+  delay(3000);                            // Delay som gir oss tid til å kopiere IP - kan slettes
 
-  //Setter opp button
-  pinMode(buttonPin,  INPUT);
+  pinMode(buttonPin,  INPUT);             //Setter opp button
 
-  //Skru på OLED skjerm
+
+  // Skru på OLED skjerm
   Wire.begin();
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
-  //Konfigurer klokke
-  configTime(GMTOffset, daylightOffset, "pool.ntp.org","time.nist.gov");
-
   //Server tilkobling
-  WiFi.mode(WIFI_STA);
+  client.setCallback(callback);           // Setter opp "lytting fra Pi"
+  WiFi.mode(WIFI_STA);                    
   client.setServer(mqttServer, mqttPort);
 
+  // Sjekk server er tilkoblet
   while(!client.connected())  {
     Serial.println("Connecting to MQTT...");
 
-    if(client.connect("ESP32Client_Solarcell", mqttUser, mqttPassword)) {
+    if(client.connect("ESP32Client_Solarcell", mqttUser, mqttPassword)) {     // Hvis server er koblet
       Serial.println("Connected");   
     }
 
-    else  {
-      Serial.print("Failed with state ");
+    else  {                                           // Hvis server ikke er koblet
+      //  Får beskjed om at den ikke er tilkoblet
+      Serial.print("Failed with state ");                    
       Serial.print(client.state());
       delay(2000);
     }
   }
+  client.subscribe("homeassistant/Pie/Solcelle"); // Definerer topic vi subscriber på
 }
 
 // Funksjonen for å trekke watt fra solcella og tjene penger fra overskudd
-void battery()
+void solarPanelReading() 
 {
-  // Leser inngangen på analog pinne (verdi mellom 0 og 4095)
-  brightness = analogRead(solarCell);
-  // Definer hvor mye watt vi får, avhengig av lysstyrken
-  if (brightness < 40) {
-    watt += 0.005;
- 
-  } else if (brightness < 80) {
-    watt += 0.05;    
-    
-  } else if (brightness < 100) {
-    watt += 0.5;
-    
-  } else if (brightness < 200) {
-    watt += 1;
-    
-  } else {
-    watt += 1.5;
-  }
-  // Sender watt til batterybanken,
-  // helt til den har nok til å lade zumoen
-  if (batteryBank <= 1000)
-  {
-    batteryBank = watt;
-    // Får den til å sende informasjonen til serveren hvert 3 sekund,
-    // for å ikke "spamme" serveren
-    unsigned long currentMillis1 = millis();
-    if (currentMillis1 - previousMillis1 >= 3000) {
-      previousMillis1 = currentMillis1;
-      char buffer1[64];
-      int ret = snprintf(buffer1, sizeof buffer1, "%d", batteryBank);
-      client.publish("homeassistant/esp/batteryBank", buffer1);
-    }
-  }
-  else {
-    bankBalance = watt;
-    // Får den til å sende informasjonen til serveren hvert 3 sekund,
-    // for å ikke "spamme" serveren
-    unsigned long currentMillis3 = millis();
-    if (currentMillis3 - previousMillis3 >= 3000) {
-        previousMillis3 = currentMillis3;
-        char buffer3[64];
-        int ret = snprintf(buffer3, sizeof buffer3, "%d", bankBalance);
-        client.publish("homeassistant/esp/batteryBank", buffer3);
-    }
-  }
+  brightness = analogRead(solarCell);         // Leser inngangen på photoresistor(verdi mellom 0 og 4095)
+  voltage = brightness * (3.3/4095);          // Gjør om lysstyrke til volt 
+  //Sender voltageverdien til server     
+  char buffer1[64];
+  int storage = snprintf(buffer1, sizeof buffer1, "%f", voltage);
+  client.publish("homeassistant/esp/solarpanel", buffer1);
+  delay(2000);
 }
 
-//Lokalt display for battery
-void displayBattery() 
+// Lokalt display for 
+void displayVoltage()
 {  
-  battery();
   // Klargør display
   display.clearDisplay();
-  //Setter farge
+  // Setter farge
   display.setTextColor(WHITE);
-  //Setter skriftstørelsen
+  // Setter skriftstørelsen
   display.setTextSize(1);
-  //Setter pekerkoordinater
+  // Setter pekerkoordinater
   display.setCursor(0,0);
-  display.print("Total Power: ");
-  display.print(batteryBank);
-  display.print(" W");
+  display.print("Voltage: ");
+  display.print(voltage);
+  display.print(" V");
 }
 
-//Lokalt display for bnk
-void displayBank() 
-{  
-  battery();
-  // Klargør display
-  display.clearDisplay();
-  //Setter farge
-  display.setTextColor(WHITE);
-  //Setter skriftstørelsen
-  display.setTextSize(1);
-  //Setter pekerkoordinater
-  display.setCursor(0,0);
-  display.print("Bank: ");
-  display.print(bankBalance);
-  display.print(" kr");
-}
 
-// Sender lysstyrke informasjonen til serveren
-void Brightness()
+// Funkjson som reagerer på beskjeder fra Raspberry Pi
+void callback(char* topic, byte* payload, unsigned int length)
 {
-  brightness = analogRead(solarCell);
-  unsigned long currentMillis2 = millis();
-  if (currentMillis2 - previousMillis2 >= 3000) {
-    previousMillis2 = currentMillis2;
-    char buffer2[64];
-    int ret = snprintf(buffer2, sizeof buffer2, "%d", brightness);
-    client.publish("homeassistant/esp/Brightness", buffer2);
-  }
+  // Debugging for mottak av beskjeder fra Raspberry Pi
+  Serial.print("Topic: ");
+  Serial.println(topic);
+  Serial.print("Payload: ");
+  Serial.print((int)payload[0]);
+  Serial.println();
+  Serial.println("-----------------------");
+
+  // ###Sende over batteriprosenten til OLEDskjermen
+
 }
 
-//Lokalt display lysstyrken
-void displayBrightness() 
-{
-  brightness = analogRead(solarCell);
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0,0);
-  display.print("Brightness: ");
-  display.print(brightness);
-}
-
-//Lokalt display klokka 
-void displayClock()
-{
-  time_t rawtime = time(nullptr);
-  struct tm* timeinfo = localtime(&rawtime);
-  
-  display.clearDisplay();
-  
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0,0);
-  display.print("The time is:");
-  
-  display.setTextSize(2);
-  display.setTextColor(WHITE);
-  display.setCursor(40,10);
-  display.print(timeinfo->tm_hour);
-  display.print(":");
-  if( timeinfo->tm_min <10)
-  display.print("0");
-  display.print(timeinfo->tm_min);
-}
-
-//Hovedprogram
+// Hovedprogram
 void loop() 
 {
-  //Raspberry PI server
-  client.loop();
-
-  // Henter informasjon
-  Brightness();
-  battery();  
-  
-  //Kaller på display-funksjon
-  switch(var) {
-    case 1:
-      displayBrightness(); 
-      display.display();
-      break;
-    case 2:
-      displayBattery();
-      display.display();
-      break;
-    case 3:
-      displayBank();
-      display.display();
-      break;
-    case 4:
-      displayClock();
-      display.display();
-  }
-  
-  if (digitalRead(buttonPin) == LOW) {
-    if (var == 1) {
-      var = 2;
-    }
-    else if (var == 2) {
-      var = 3;
-    }
-    else if (var == 3) {
-      var = 4;
-    }
-    else if (var == 4) {
-      var = 1;
-    }
-  }
+  client.loop();            //Raspberry PI server
+  solarPanelReading();      //Funksjon
+  displayVoltage();         // Henter informasjon til OLED som skal vise voltageverdi.
+  display.display();
 }
